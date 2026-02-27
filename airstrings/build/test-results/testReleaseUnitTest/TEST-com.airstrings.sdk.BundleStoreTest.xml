@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="BundleStore" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-02-27T07:11:39" hostname="Valerios-MacBook-Pro-2.local" time="0.031">
+  <properties/>
+  <testcase name="overwrite existing cache" classname="com.airstrings.sdk.BundleStoreTest" time="0.012"/>
+  <testcase name="delete removes cache" classname="com.airstrings.sdk.BundleStoreTest" time="0.004"/>
+  <testcase name="save with null etag" classname="com.airstrings.sdk.BundleStoreTest" time="0.002"/>
+  <testcase name="per-locale isolation" classname="com.airstrings.sdk.BundleStoreTest" time="0.003"/>
+  <testcase name="save and load round-trip" classname="com.airstrings.sdk.BundleStoreTest" time="0.002"/>
+  <testcase name="corrupted metadata still returns data" classname="com.airstrings.sdk.BundleStoreTest" time="0.002"/>
+  <testcase name="load returns null when empty" classname="com.airstrings.sdk.BundleStoreTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

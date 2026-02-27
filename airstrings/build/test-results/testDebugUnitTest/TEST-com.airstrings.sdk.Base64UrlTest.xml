@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Base64Url" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-02-27T07:12:07" hostname="Valerios-MacBook-Pro-2.local" time="0.007">
+  <properties/>
+  <testcase name="encode then decode round-trip" classname="com.airstrings.sdk.Base64UrlTest" time="0.003"/>
+  <testcase name="decode empty string" classname="com.airstrings.sdk.Base64UrlTest" time="0.0"/>
+  <testcase name="64-byte signature produces 86-char encoding" classname="com.airstrings.sdk.Base64UrlTest" time="0.001"/>
+  <testcase name="decode with URL-safe characters" classname="com.airstrings.sdk.Base64UrlTest" time="0.0"/>
+  <testcase name="decode valid base64url" classname="com.airstrings.sdk.Base64UrlTest" time="0.001"/>
+  <testcase name="decode handles missing padding" classname="com.airstrings.sdk.Base64UrlTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

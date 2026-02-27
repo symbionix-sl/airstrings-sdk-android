@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="BundleVerifier" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-02-27T07:12:07" hostname="Valerios-MacBook-Pro-2.local" time="0.037">
+  <properties/>
+  <testcase name="wrong key fails verification" classname="com.airstrings.sdk.BundleVerifierTest" time="0.027"/>
+  <testcase name="tampered strings fail verification" classname="com.airstrings.sdk.BundleVerifierTest" time="0.002"/>
+  <testcase name="valid signature passes" classname="com.airstrings.sdk.BundleVerifierTest" time="0.002"/>
+  <testcase name="unsupported format_version throws" classname="com.airstrings.sdk.BundleVerifierTest" time="0.002"/>
+  <testcase name="signature with multiple strings verifies" classname="com.airstrings.sdk.BundleVerifierTest" time="0.001"/>
+  <testcase name="invalid signature encoding throws" classname="com.airstrings.sdk.BundleVerifierTest" time="0.001"/>
+  <testcase name="unknown key_id throws" classname="com.airstrings.sdk.BundleVerifierTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
