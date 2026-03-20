@@ -30,7 +30,11 @@ internal object CanonicalJson {
         val sortedKeys = bundle.strings.keys.sorted()
         for ((i, key) in sortedKeys.withIndex()) {
             if (i > 0) json.append(',')
-            json.append(escapeString(key)).append(':').append(escapeString(bundle.strings[key]!!))
+            val entry = bundle.strings[key]!!
+            json.append(escapeString(key)).append(':')
+            json.append("{\"format\":").append(escapeString(entry.format.rawValue))
+            json.append(",\"value\":").append(escapeString(entry.value))
+            json.append('}')
         }
 
         json.append("}}")

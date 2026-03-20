@@ -3,45 +3,13 @@ package com.airstrings.sdk
 /**
  * Configuration for the AirStrings SDK.
  *
- * Not a data class because it contains [ByteArray] — data class would generate
- * broken `equals()`/`hashCode()` based on array reference identity.
- * Custom content-based `equals()`/`hashCode()` are implemented manually.
- *
- * All [publicKeys] byte arrays are defensively copied on construction.
- * The caller cannot mutate key material after creating a config.
+ * [publicKeys] is a list of base64-encoded Ed25519 public keys.
+ * The bundle's `key_id` field is the base64 encoding of the signing key —
+ * verification checks that `key_id` is in this list, then decodes it to
+ * obtain the raw public key bytes.
  */
-public class AirStringsConfiguration(
+public data class AirStringsConfiguration(
     public val projectId: String,
-    publicKeys: Map<String, ByteArray>,
+    public val publicKeys: List<String>,
     public val locale: AirStringsLocale = AirStringsLocale.System,
-    public val baseUrl: String = "https://cdn.airstrings.com",
-) {
-
-    /** Deep copy — each ByteArray is cloned. */
-    public val publicKeys: Map<String, ByteArray> = publicKeys.mapValues { (_, v) -> v.copyOf() }
-
-    override fun equals(other: Any?): Boolean {
-        if (this === other) return true
-        if (other !is AirStringsConfiguration) return false
-        if (projectId != other.projectId) return false
-        if (locale != other.locale) return false
-        if (baseUrl != other.baseUrl) return false
-        if (publicKeys.size != other.publicKeys.size) return false
-        for ((key, value) in publicKeys) {
-            val otherValue = other.publicKeys[key] ?: return false
-            if (!value.contentEquals(otherValue)) return false
-        }
-        return true
-    }
-
-    override fun hashCode(): Int {
-        var result = projectId.hashCode()
-        result = 31 * result + locale.hashCode()
-        result = 31 * result + baseUrl.hashCode()
-        for ((key, value) in publicKeys) {
-            result = 31 * result + key.hashCode()
-            result = 31 * result + value.contentHashCode()
-        }
-        return result
-    }
-}
+)

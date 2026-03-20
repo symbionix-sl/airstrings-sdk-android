@@ -17,3 +17,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "airstrings-sdk-android"
 include(":airstrings")
+include(":demo")

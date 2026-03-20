@@ -1,15 +1,15 @@
 package com.airstrings.sdk
 
-import com.airstrings.sdk.models.CanonicalJson
-import com.airstrings.sdk.models.StringBundle
+import com.airstrings.sdk.models.StringEntry
+import com.airstrings.sdk.models.StringFormat
 import com.airstrings.sdk.networking.BundleFetcher
-import com.airstrings.sdk.security.Base64Url
 import com.airstrings.sdk.security.BundleVerifier
 import com.airstrings.sdk.storage.BundleStore
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 
@@ -22,9 +22,8 @@ class AirStringsTest {
     ): AirStringsConfiguration {
         return AirStringsConfiguration(
             projectId = "proj_test12345678",
-            publicKeys = emptyMap(),
+            publicKeys = emptyList(),
             locale = locale,
-            baseUrl = "https://localhost:9999",
         )
     }
 
@@ -33,14 +32,22 @@ class AirStringsTest {
     ): AirStrings {
         val testScope = TestScope()
         return AirStrings(
-            fetcher = BundleFetcher(baseUrl = config.baseUrl),
+            fetcher = BundleFetcher(),
             verifier = BundleVerifier(publicKeys = config.publicKeys),
             store = BundleStore(
-                baseDirectory = java.io.File(System.getProperty("java.io.tmpdir"), "airstrings-test-${System.nanoTime()}"),
+                baseDirectory = File(System.getProperty("java.io.tmpdir"), "airstrings-test-${System.nanoTime()}"),
             ),
             scope = testScope,
             configuration = config,
         )
+    }
+
+    private fun makeSutWithStrings(
+        strings: Map<String, StringEntry>,
+    ): AirStrings {
+        val sut = makeSut()
+        sut.applyBundle(strings, revision = 1)
+        return sut
     }
 
     @Test
@@ -80,5 +87,79 @@ class AirStringsTest {
     fun initialStringsMapIsEmpty() {
         val sut = makeSut()
         assertEquals(emptyMap(), sut.strings.value)
+    }
+
+    @Test
+    @DisplayName("format returns key as fallback when no strings loaded")
+    fun formatReturnsFallbackWhenNoStrings() {
+        val sut = makeSut()
+        assertEquals("missing.key", sut.format("missing.key", mapOf("count" to 5)))
+    }
+
+    @Test
+    @DisplayName("format returns value as-is for text format")
+    fun formatReturnsValueForTextFormat() {
+        val sut = makeSutWithStrings(
+            strings = mapOf("greeting" to StringEntry("Hello World", StringFormat.TEXT)),
+        )
+        assertEquals("Hello World", sut.format("greeting", mapOf("name" to "Alice")))
+    }
+
+    @Test
+    @DisplayName("format returns raw pattern for icu format in JVM tests (fallback behavior)")
+    fun formatReturnsRawPatternForIcuInJvm() {
+        // In JVM unit tests, android.icu.text.MessageFormat is not available.
+        // The format method catches the exception and returns the raw pattern.
+        val pattern = "{count, plural, one {# item} other {# items}}"
+        val sut = makeSutWithStrings(
+            strings = mapOf("items" to StringEntry(pattern, StringFormat.ICU)),
+        )
+        assertEquals(pattern, sut.format("items", mapOf("count" to 5)))
+    }
+
+    @Test
+    @DisplayName("get returns raw value for both text and icu entries")
+    fun getReturnsRawValueForBothFormats() {
+        val icuPattern = "{count, plural, one {# item} other {# items}}"
+        val sut = makeSutWithStrings(
+            strings = mapOf(
+                "greeting" to StringEntry("Hello", StringFormat.TEXT),
+                "items" to StringEntry(icuPattern, StringFormat.ICU),
+            ),
+        )
+        assertEquals("Hello", sut["greeting"])
+        assertEquals(icuPattern, sut["items"])
+    }
+
+    @Test
+    @DisplayName("strings StateFlow contains raw values")
+    fun stringsStateFlowContainsRawValues() {
+        val icuPattern = "{n, plural, one {#} other {#s}}"
+        val sut = makeSutWithStrings(
+            strings = mapOf(
+                "plain" to StringEntry("Text", StringFormat.TEXT),
+                "pattern" to StringEntry(icuPattern, StringFormat.ICU),
+            ),
+        )
+        assertEquals("Text", sut.strings.value["plain"])
+        assertEquals(icuPattern, sut.strings.value["pattern"])
+    }
+
+    @Test
+    @DisplayName("format returns key when key not found")
+    fun formatReturnsKeyWhenNotFound() {
+        val sut = makeSutWithStrings(
+            strings = mapOf("existing" to StringEntry("value", StringFormat.TEXT)),
+        )
+        assertEquals("missing.key", sut.format("missing.key", emptyMap()))
+    }
+
+    @Test
+    @DisplayName("text format ignores args")
+    fun textFormatIgnoresArgs() {
+        val sut = makeSutWithStrings(
+            strings = mapOf("msg" to StringEntry("Static text", StringFormat.TEXT)),
+        )
+        assertEquals("Static text", sut.format("msg", mapOf("unused" to 42, "also_unused" to "value")))
     }
 }

@@ -9,20 +9,36 @@ import org.bouncycastle.crypto.signers.Ed25519Signer
 /**
  * Verifies Ed25519 signatures on string bundles using BouncyCastle's lightweight API.
  *
+ * [publicKeys] is a list of base64-encoded Ed25519 public keys (standard encoding, 44 chars each).
+ * The bundle's `key_id` is the base64 encoding of the signing key. Verification checks that
+ * `key_id` is in the configured list, then base64-decodes it to obtain the raw key bytes.
+ *
  * Verification order (per contract):
- * 1. Look up key_id -> unknown key = hard error
- * 2. Build canonical signed content
- * 3. Verify Ed25519 signature -> failure = hard error
- * 4. Check format_version -> unknown version = hard error
+ * 1. Check key_id ∈ publicKeys -> unknown key = hard error
+ * 2. Base64-decode key_id -> invalid encoding = hard error
+ * 3. Build canonical signed content
+ * 4. Verify Ed25519 signature -> failure = hard error
+ * 5. Check format_version -> unknown version = hard error
  */
 internal class BundleVerifier(
-    private val publicKeys: Map<String, ByteArray>,
+    private val publicKeys: List<String>,
 ) {
 
     @Throws(AirStringsError::class)
     fun verify(bundle: StringBundle) {
-        val keyData = publicKeys[bundle.keyId]
-            ?: throw AirStringsError.UnknownKeyId(bundle.keyId)
+        if (bundle.keyId !in publicKeys) {
+            throw AirStringsError.UnknownKeyId(bundle.keyId)
+        }
+
+        val keyData = try {
+            java.util.Base64.getDecoder().decode(bundle.keyId)
+        } catch (_: IllegalArgumentException) {
+            throw AirStringsError.InvalidKeyIdEncoding(bundle.keyId)
+        }
+
+        if (keyData.size != 32) {
+            throw AirStringsError.InvalidKeyIdEncoding(bundle.keyId)
+        }
 
         val canonicalBytes = CanonicalJson.signedContent(bundle)
 

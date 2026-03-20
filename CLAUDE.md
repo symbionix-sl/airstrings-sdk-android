@@ -4,6 +4,8 @@ Kotlin library that fetches, verifies, caches, and exposes Ed25519-signed locali
 
 **Platform:** Android API 26+ | **Kotlin:** 2.0+ | **Dependencies:** OkHttp (networking), BouncyCastle (Ed25519), kotlinx-coroutines (StateFlow/async)
 
+**Consistency and predictability.** Follow established patterns exactly so that AI agents (and humans) don't make mistakes or invent things. When a pattern exists, replicate it; don't improvise.
+
 ## Code Style
 
 - **Indentation:** 4 spaces. No tabs.
@@ -28,7 +30,7 @@ Inherited from the parent project — these override everything else:
 ```
 airstrings/src/main/kotlin/com/airstrings/sdk/
 ├── AirStrings.kt                # Public API — StateFlow-based observable state
-├── AirStringsConfiguration.kt   # Init config (projectId, publicKeys, locale, baseURL)
+├── AirStringsConfiguration.kt   # Init config (projectId, publicKeys, locale)
 ├── AirStringsLocale.kt          # System | Fixed("en-US")
 ├── AirStringsError.kt           # Sealed class for errors
 ├── models/
@@ -265,7 +267,6 @@ class AirStringsConfiguration(
     val projectId: String,
     publicKeys: Map<String, ByteArray>,  // copied on construction
     val locale: AirStringsLocale = AirStringsLocale.System,
-    val baseUrl: String = "https://cdn.airstrings.com",
 ) {
     val publicKeys: Map<String, ByteArray>  // deep copy, each ByteArray cloned
 }
@@ -314,4 +315,45 @@ fun WelcomeScreen() {
 
 **In v1:** Fetch, verify, cache, serve strings. One locale active at a time. Foreground refresh. ETag-based conditional requests. Key rotation via multiple configured public keys.
 
-**Not in v1 (do not build):** Analytics/telemetry, ICU MessageFormat, plural handling, WorkManager background sync, push-triggered updates, multiple simultaneous locales, RxJava/LiveData adapters, Compose preview helpers, server-driven locale negotiation, Hilt/Dagger modules.
+**Not in v1 (do not build):** Analytics/telemetry, WorkManager background sync, push-triggered updates, multiple simultaneous locales, RxJava/LiveData adapters, Compose preview helpers, server-driven locale negotiation, Hilt/Dagger modules.
+
+## ICU MessageFormat Support
+
+Strings in the bundle now have a `format` field: `"text"` (plain) or `"icu"` (ICU MessageFormat).
+
+### Bundle format change
+
+String values in the bundle envelope changed from plain strings to objects:
+
+```json
+{
+  "strings": {
+    "welcome": { "value": "Welcome!", "format": "text" },
+    "items.count": { "value": "{count, plural, one {# item} other {# items}}", "format": "icu" }
+  }
+}
+```
+
+This affects `StringBundle.kt` (data class), `CanonicalJson.kt` (signature serialization), and the `AirStrings` strings StateFlow.
+
+### API design
+
+- `strings` StateFlow and `operator fun get(key)`: return the **raw value** (plain text or ICU pattern). This preserves backward compatibility.
+- Add a new formatting method: `fun format(key: String, args: Map<String, Any>): String` that:
+  - For `"text"` format: returns the value as-is (ignores args)
+  - For `"icu"` format: formats using `android.icu.text.MessageFormat` and returns the formatted string
+  - On formatting failure: returns the raw pattern string (never crashes)
+
+### Platform ICU runtime
+
+Use `android.icu.text.MessageFormat` (available since API 24, we target API 26+). No additional dependency needed — it ships with the Android platform. Isolated to a single formatting utility.
+
+### Canonical JSON update
+
+Each string in the canonical JSON is now an object with `"format"` and `"value"` keys (sorted lexicographically):
+
+```
+"key":{"format":"text","value":"Hello"}
+```
+
+Update `CanonicalJson.kt` to serialize string entries as `{"format":..., "value":...}` objects instead of bare strings.

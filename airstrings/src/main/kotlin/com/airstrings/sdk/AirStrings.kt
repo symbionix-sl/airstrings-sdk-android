@@ -1,12 +1,14 @@
 package com.airstrings.sdk
 
 import android.content.Context
+import android.icu.text.MessageFormat
 import android.util.Log
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.airstrings.sdk.models.CanonicalJson
 import com.airstrings.sdk.models.StringBundle
+import com.airstrings.sdk.models.StringEntry
+import com.airstrings.sdk.models.StringFormat
 import com.airstrings.sdk.networking.BundleFetcher
 import com.airstrings.sdk.networking.FetchResult
 import com.airstrings.sdk.security.BundleVerifier
@@ -22,6 +24,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
+import java.util.Locale
 
 /**
  * Main entry point for the AirStrings SDK.
@@ -53,6 +56,9 @@ public class AirStrings : Closeable {
     private val _isReady = MutableStateFlow(false)
     private val _revision = MutableStateFlow(0)
 
+    /** Full string entries including format metadata, for ICU formatting. */
+    private val _entries = MutableStateFlow<Map<String, StringEntry>>(emptyMap())
+
     // MARK: - Internal machinery
 
     private val configuration: AirStringsConfiguration
@@ -74,6 +80,31 @@ public class AirStrings : Closeable {
     }
 
     /**
+     * Formats a localized string with the given arguments.
+     *
+     * - For `"text"` format strings: returns the value as-is, ignoring [args].
+     * - For `"icu"` format strings: formats using [android.icu.text.MessageFormat] with the provided [args].
+     * - If the key is not found: returns the key itself as fallback.
+     * - If ICU formatting fails: returns the raw pattern string (never crashes).
+     */
+    public fun format(key: String, args: Map<String, Any>): String {
+        val entry = _entries.value[key] ?: return key
+
+        return when (entry.format) {
+            StringFormat.TEXT -> entry.value
+            StringFormat.ICU -> {
+                try {
+                    val locale = Locale.forLanguageTag(_currentLocale.value)
+                    val formatter = MessageFormat(entry.value, locale)
+                    formatter.format(args)
+                } catch (_: Exception) {
+                    entry.value
+                }
+            }
+        }
+    }
+
+    /**
      * Switches to a new locale. Loads cached bundle instantly if available,
      * then fetches the latest from CDN.
      */
@@ -90,7 +121,8 @@ public class AirStrings : Closeable {
             if (bundle != null) {
                 try {
                     verifier.verify(bundle)
-                    _strings.value = bundle.strings
+                    _strings.value = bundle.rawStrings
+                    _entries.value = bundle.strings
                     _revision.value = bundle.revision
                     cachedETags[bcp47] = cached.etag ?: ""
                 } catch (e: AirStringsError) {
@@ -99,11 +131,13 @@ public class AirStrings : Closeable {
                         store.delete(configuration.projectId, bcp47)
                     }
                     _strings.value = emptyMap()
+                    _entries.value = emptyMap()
                     _revision.value = 0
                 }
             }
         } else {
             _strings.value = emptyMap()
+            _entries.value = emptyMap()
             _revision.value = 0
         }
 
@@ -157,7 +191,8 @@ public class AirStrings : Closeable {
 
                     // Only apply if locale hasn't changed during fetch
                     if (locale == _currentLocale.value) {
-                        _strings.value = bundle.strings
+                        _strings.value = bundle.rawStrings
+                        _entries.value = bundle.strings
                         _revision.value = bundle.revision
                         _isReady.value = true
 
@@ -216,6 +251,14 @@ public class AirStrings : Closeable {
         this._currentLocale = MutableStateFlow(configuration.locale.resolved())
     }
 
+    /** Sets string entries directly. For testing only. */
+    internal fun applyBundle(entries: Map<String, StringEntry>, revision: Int) {
+        _strings.value = entries.mapValues { it.value.value }
+        _entries.value = entries
+        _revision.value = revision
+        _isReady.value = true
+    }
+
     // MARK: - Public factory
 
     public companion object {
@@ -232,7 +275,7 @@ public class AirStrings : Closeable {
             val cacheDir = File(appContext.cacheDir, "airstrings")
 
             val instance = AirStrings(
-                fetcher = BundleFetcher(baseUrl = configuration.baseUrl),
+                fetcher = BundleFetcher(),
                 verifier = BundleVerifier(publicKeys = configuration.publicKeys),
                 store = BundleStore(baseDirectory = cacheDir),
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -264,7 +307,8 @@ public class AirStrings : Closeable {
 
         try {
             verifier.verify(bundle)
-            _strings.value = bundle.strings
+            _strings.value = bundle.rawStrings
+            _entries.value = bundle.strings
             _revision.value = bundle.revision
             _isReady.value = true
             cached.etag?.let { cachedETags[locale] = it }
