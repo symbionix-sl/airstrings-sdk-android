@@ -20,7 +20,9 @@ class MainActivity : ComponentActivity() {
         airStrings = AirStrings.create(
             context = this,
             configuration = AirStringsConfiguration(
+                organizationId = DemoConfig.ORGANIZATION_ID,
                 projectId = DemoConfig.PROJECT_ID,
+                environmentId = DemoConfig.ENVIRONMENT_ID,
                 publicKeys = mapOf(DemoConfig.KEY_ID to DemoConfig.publicKeyData),
                 locale = AirStringsLocale.Fixed("en"),
             ),

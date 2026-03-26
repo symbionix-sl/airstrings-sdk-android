@@ -11,8 +11,8 @@ import java.util.TimeZone
  *
  * Cache layout:
  * ```
- * {baseDirectory}/{projectId}/{locale}/bundle.json
- * {baseDirectory}/{projectId}/{locale}/metadata.json
+ * {baseDirectory}/{projectId}/{environmentId}/{locale}/bundle.json
+ * {baseDirectory}/{projectId}/{environmentId}/{locale}/metadata.json
  * ```
  *
  * Metadata stores etag and cached timestamp. If metadata is missing or corrupted,
@@ -27,12 +27,12 @@ internal class BundleStore(
         val etag: String?,
     )
 
-    private fun directory(projectId: String, locale: String): File {
-        return File(File(baseDirectory, projectId), locale)
+    private fun directory(projectId: String, environmentId: String, locale: String): File {
+        return File(File(File(baseDirectory, projectId), environmentId), locale)
     }
 
-    fun save(data: ByteArray, projectId: String, locale: String, etag: String?) {
-        val dir = directory(projectId, locale)
+    fun save(data: ByteArray, projectId: String, environmentId: String, locale: String, etag: String?) {
+        val dir = directory(projectId, environmentId, locale)
         try {
             dir.mkdirs()
             File(dir, "bundle.json").writeBytes(data)
@@ -48,8 +48,8 @@ internal class BundleStore(
         }
     }
 
-    fun load(projectId: String, locale: String): CacheEntry? {
-        val dir = directory(projectId, locale)
+    fun load(projectId: String, environmentId: String, locale: String): CacheEntry? {
+        val dir = directory(projectId, environmentId, locale)
         val bundleFile = File(dir, "bundle.json")
 
         if (!bundleFile.exists()) return null
@@ -75,8 +75,8 @@ internal class BundleStore(
         return CacheEntry(data = data, etag = etag)
     }
 
-    fun delete(projectId: String, locale: String) {
-        val dir = directory(projectId, locale)
+    fun delete(projectId: String, environmentId: String, locale: String) {
+        val dir = directory(projectId, environmentId, locale)
         try {
             dir.deleteRecursively()
         } catch (_: Exception) {

@@ -6,9 +6,11 @@ package com.airstrings.demo
  * Run `make config` before building.
  */
 object DemoConfig {
+    const val ORGANIZATION_ID = "org_demo00000001"
     const val PROJECT_ID = "proj_demo00000001"
+    const val ENVIRONMENT_ID = "env_demo00000001"
 
-    /** MinIO endpoint — SDK builds: {baseURL}/v1/{projectId}/{locale}/bundle.json */
+    /** MinIO endpoint — SDK builds: {baseURL}/{organizationId}/{projectId}/{environmentId}/{locale}/bundle.json */
     const val BASE_URL = "http://10.0.2.127:9000/airstrings-bundles/bundles"
 
     /** Locales seeded by seed.sh. */

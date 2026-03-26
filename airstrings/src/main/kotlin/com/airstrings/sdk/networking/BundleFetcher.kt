@@ -25,11 +25,13 @@ internal class BundleFetcher {
         .build()
 
     fun fetch(
+        organizationId: String,
         projectId: String,
+        environmentId: String,
         locale: String,
         ifNoneMatch: String? = null,
     ): FetchResult {
-        val url = "${baseUrl.trimEnd('/')}/v1/$projectId/$locale/bundle.json"
+        val url = "${baseUrl.trimEnd('/')}/$organizationId/$projectId/$environmentId/$locale/bundle.json"
 
         val requestBuilder = Request.Builder().url(url).get()
 

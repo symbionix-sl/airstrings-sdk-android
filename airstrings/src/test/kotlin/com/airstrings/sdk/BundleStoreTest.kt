@@ -23,9 +23,9 @@ class BundleStoreTest {
     fun saveAndLoadRoundTrip() {
         val store = createStore()
         val data = """{"format_version":1,"strings":{}}""".toByteArray()
-        store.save(data, "proj_test12345678", "en", """"rev:42"""")
+        store.save(data, "proj_test12345678", "env_test12345678", "en", """"rev:42"""")
 
-        val loaded = store.load("proj_test12345678", "en")
+        val loaded = store.load("proj_test12345678", "env_test12345678", "en")
         assertNotNull(loaded)
         assertContentEquals(data, loaded.data)
         assertEquals(""""rev:42"""", loaded.etag)
@@ -35,7 +35,7 @@ class BundleStoreTest {
     @DisplayName("load returns null when empty")
     fun loadReturnsNullWhenEmpty() {
         val store = createStore()
-        val loaded = store.load("proj_nonexistent", "en")
+        val loaded = store.load("proj_nonexistent", "env_test12345678", "en")
         assertNull(loaded)
     }
 
@@ -46,11 +46,11 @@ class BundleStoreTest {
         val enData = """{"locale":"en"}""".toByteArray()
         val frData = """{"locale":"fr"}""".toByteArray()
 
-        store.save(enData, "proj_test12345678", "en", """"en:1"""")
-        store.save(frData, "proj_test12345678", "fr", """"fr:1"""")
+        store.save(enData, "proj_test12345678", "env_test12345678", "en", """"en:1"""")
+        store.save(frData, "proj_test12345678", "env_test12345678", "fr", """"fr:1"""")
 
-        val enLoaded = store.load("proj_test12345678", "en")
-        val frLoaded = store.load("proj_test12345678", "fr")
+        val enLoaded = store.load("proj_test12345678", "env_test12345678", "en")
+        val frLoaded = store.load("proj_test12345678", "env_test12345678", "fr")
 
         assertNotNull(enLoaded)
         assertNotNull(frLoaded)
@@ -65,13 +65,13 @@ class BundleStoreTest {
     fun deleteRemovesCache() {
         val store = createStore()
         val data = """{"test":true}""".toByteArray()
-        store.save(data, "proj_test12345678", "en", null)
+        store.save(data, "proj_test12345678", "env_test12345678", "en", null)
 
-        assertNotNull(store.load("proj_test12345678", "en"))
+        assertNotNull(store.load("proj_test12345678", "env_test12345678", "en"))
 
-        store.delete("proj_test12345678", "en")
+        store.delete("proj_test12345678", "env_test12345678", "en")
 
-        assertNull(store.load("proj_test12345678", "en"))
+        assertNull(store.load("proj_test12345678", "env_test12345678", "en"))
     }
 
     @Test
@@ -79,9 +79,9 @@ class BundleStoreTest {
     fun saveWithNullEtag() {
         val store = createStore()
         val data = """{"test":true}""".toByteArray()
-        store.save(data, "proj_test12345678", "en", null)
+        store.save(data, "proj_test12345678", "env_test12345678", "en", null)
 
-        val loaded = store.load("proj_test12345678", "en")
+        val loaded = store.load("proj_test12345678", "env_test12345678", "en")
         assertNotNull(loaded)
         assertContentEquals(data, loaded.data)
         assertNull(loaded.etag)
@@ -94,10 +94,10 @@ class BundleStoreTest {
         val data1 = """{"revision":1}""".toByteArray()
         val data2 = """{"revision":2}""".toByteArray()
 
-        store.save(data1, "proj_test12345678", "en", """"v1"""")
-        store.save(data2, "proj_test12345678", "en", """"v2"""")
+        store.save(data1, "proj_test12345678", "env_test12345678", "en", """"v1"""")
+        store.save(data2, "proj_test12345678", "env_test12345678", "en", """"v2"""")
 
-        val loaded = store.load("proj_test12345678", "en")
+        val loaded = store.load("proj_test12345678", "env_test12345678", "en")
         assertNotNull(loaded)
         assertContentEquals(data2, loaded.data)
         assertEquals(""""v2"""", loaded.etag)
@@ -108,13 +108,12 @@ class BundleStoreTest {
     fun corruptedMetadataStillReturnsData() {
         val store = createStore()
         val data = """{"test":true}""".toByteArray()
-        store.save(data, "proj_test12345678", "en", """"valid"""")
+        store.save(data, "proj_test12345678", "env_test12345678", "en", """"valid"""")
 
-        // Corrupt the metadata file
-        val metadataFile = File(File(File(tempDir, "proj_test12345678"), "en"), "metadata.json")
+        val metadataFile = File(File(File(File(tempDir, "proj_test12345678"), "env_test12345678"), "en"), "metadata.json")
         metadataFile.writeText("corrupted")
 
-        val loaded = store.load("proj_test12345678", "en")
+        val loaded = store.load("proj_test12345678", "env_test12345678", "en")
         assertNotNull(loaded)
         assertContentEquals(data, loaded.data)
         assertNull(loaded.etag)

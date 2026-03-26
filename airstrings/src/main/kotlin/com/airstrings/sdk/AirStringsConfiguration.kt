@@ -9,7 +9,9 @@ package com.airstrings.sdk
  * obtain the raw public key bytes.
  */
 public data class AirStringsConfiguration(
+    public val organizationId: String,
     public val projectId: String,
+    public val environmentId: String,
     public val publicKeys: List<String>,
     public val locale: AirStringsLocale = AirStringsLocale.System,
 )

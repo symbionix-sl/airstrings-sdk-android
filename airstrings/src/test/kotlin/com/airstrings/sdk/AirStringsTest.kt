@@ -21,7 +21,9 @@ class AirStringsTest {
         locale: AirStringsLocale = AirStringsLocale.Fixed("en"),
     ): AirStringsConfiguration {
         return AirStringsConfiguration(
+            organizationId = "org_test12345678",
             projectId = "proj_test12345678",
+            environmentId = "env_test12345678",
             publicKeys = emptyList(),
             locale = locale,
         )

@@ -113,7 +113,7 @@ public class AirStrings : Closeable {
 
         // Try loading cached bundle for new locale
         val cached = withContext(Dispatchers.IO) {
-            store.load(configuration.projectId, bcp47)
+            store.load(configuration.projectId, configuration.environmentId, bcp47)
         }
 
         if (cached != null) {
@@ -128,7 +128,7 @@ public class AirStrings : Closeable {
                 } catch (e: AirStringsError) {
                     Log.e(TAG, "Cached bundle verification failed for $bcp47, clearing cache")
                     withContext(Dispatchers.IO) {
-                        store.delete(configuration.projectId, bcp47)
+                        store.delete(configuration.projectId, configuration.environmentId, bcp47)
                     }
                     _strings.value = emptyMap()
                     _entries.value = emptyMap()
@@ -156,7 +156,9 @@ public class AirStrings : Closeable {
 
             val result = withContext(Dispatchers.IO) {
                 fetcher.fetch(
+                    organizationId = configuration.organizationId,
                     projectId = configuration.projectId,
+                    environmentId = configuration.environmentId,
                     locale = locale,
                     ifNoneMatch = etag,
                 )
@@ -185,7 +187,7 @@ public class AirStrings : Closeable {
                     }
 
                     withContext(Dispatchers.IO) {
-                        store.save(result.data, configuration.projectId, locale, result.etag)
+                        store.save(result.data, configuration.projectId, configuration.environmentId, locale, result.etag)
                     }
                     cachedETags[locale] = result.etag ?: ""
 
@@ -207,7 +209,7 @@ public class AirStrings : Closeable {
             if (!_isReady.value) {
                 // If we have a cached bundle, mark as ready
                 val hasCached = withContext(Dispatchers.IO) {
-                    store.load(configuration.projectId, locale) != null
+                    store.load(configuration.projectId, configuration.environmentId, locale) != null
                 }
                 if (hasCached) {
                     _isReady.value = true
@@ -297,11 +299,11 @@ public class AirStrings : Closeable {
 
     private fun loadCachedBundle() {
         val locale = _currentLocale.value
-        val cached = store.load(configuration.projectId, locale) ?: return
+        val cached = store.load(configuration.projectId, configuration.environmentId, locale) ?: return
 
         val bundle = decodeBundle(cached.data)
         if (bundle == null) {
-            store.delete(configuration.projectId, locale)
+            store.delete(configuration.projectId, configuration.environmentId, locale)
             return
         }
 
@@ -314,7 +316,7 @@ public class AirStrings : Closeable {
             cached.etag?.let { cachedETags[locale] = it }
         } catch (e: AirStringsError) {
             Log.e(TAG, "Cached bundle verification failed, clearing cache")
-            store.delete(configuration.projectId, locale)
+            store.delete(configuration.projectId, configuration.environmentId, locale)
         }
     }
 
