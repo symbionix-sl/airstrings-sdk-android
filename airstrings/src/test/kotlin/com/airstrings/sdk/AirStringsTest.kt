@@ -34,7 +34,7 @@ class AirStringsTest {
     ): AirStrings {
         val testScope = TestScope()
         return AirStrings(
-            fetcher = BundleFetcher(),
+            fetcher = BundleFetcher(baseUrl = "https://cdn.airstrings.com"),
             verifier = BundleVerifier(publicKeys = config.publicKeys),
             store = BundleStore(
                 baseDirectory = File(System.getProperty("java.io.tmpdir"), "airstrings-test-${System.nanoTime()}"),

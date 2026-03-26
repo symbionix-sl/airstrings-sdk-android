@@ -21,10 +21,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.json.JSONObject
 import java.io.Closeable
 import java.io.File
+import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 /**
  * Main entry point for the AirStrings SDK.
@@ -62,7 +66,8 @@ public class AirStrings : Closeable {
     // MARK: - Internal machinery
 
     private val configuration: AirStringsConfiguration
-    private val fetcher: BundleFetcher
+    private lateinit var fetcher: BundleFetcher
+    private val httpClient: OkHttpClient
     private val verifier: BundleVerifier
     private val store: BundleStore
     private val scope: CoroutineScope
@@ -247,6 +252,25 @@ public class AirStrings : Closeable {
     ) {
         this.configuration = configuration
         this.fetcher = fetcher
+        this.httpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+        this.verifier = verifier
+        this.store = store
+        this.scope = scope
+        this._currentLocale = MutableStateFlow(configuration.locale.resolved())
+    }
+
+    private constructor(
+        httpClient: OkHttpClient,
+        verifier: BundleVerifier,
+        store: BundleStore,
+        scope: CoroutineScope,
+        configuration: AirStringsConfiguration,
+    ) {
+        this.configuration = configuration
+        this.httpClient = httpClient
         this.verifier = verifier
         this.store = store
         this.scope = scope
@@ -265,9 +289,13 @@ public class AirStrings : Closeable {
 
     public companion object {
         private const val TAG = "AirStrings"
+        private const val DEFAULT_CDN_URL = "https://cdn.airstrings.com"
 
         /**
          * Creates a new AirStrings instance and immediately loads cached strings + fetches fresh ones.
+         *
+         * Calls the bootstrap endpoint to discover the CDN URL before fetching bundles.
+         * Falls back to the default CDN URL if bootstrap fails.
          *
          * Always uses [Context.getApplicationContext] — the SDK never holds a reference
          * to an Activity, Fragment, or View context.
@@ -276,8 +304,13 @@ public class AirStrings : Closeable {
             val appContext = context.applicationContext
             val cacheDir = File(appContext.cacheDir, "airstrings")
 
+            val httpClient = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
+
             val instance = AirStrings(
-                fetcher = BundleFetcher(),
+                httpClient = httpClient,
                 verifier = BundleVerifier(publicKeys = configuration.publicKeys),
                 store = BundleStore(baseDirectory = cacheDir),
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -288,6 +321,10 @@ public class AirStrings : Closeable {
             instance.observeForeground()
 
             instance.scope.launch {
+                val cdnBaseUrl = withContext(Dispatchers.IO) {
+                    instance.bootstrap(configuration.apiBaseURL)
+                }
+                instance.fetcher = BundleFetcher(baseUrl = cdnBaseUrl, client = httpClient)
                 instance.refresh()
             }
 
@@ -327,6 +364,29 @@ public class AirStrings : Closeable {
         } catch (e: Exception) {
             Log.e(TAG, "Bundle decoding failed: ${e.message}")
             null
+        }
+    }
+
+    private fun bootstrap(apiBaseURL: String): String {
+        return try {
+            val request = Request.Builder()
+                .url("${apiBaseURL.trimEnd('/')}/v1/sdk/bootstrap")
+                .get()
+                .build()
+            val response = httpClient.newCall(request).execute()
+            response.use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string() ?: throw IOException("Empty body")
+                    val json = JSONObject(body)
+                    json.getString("cdn_base_url")
+                } else {
+                    Log.w(TAG, "Bootstrap returned HTTP ${resp.code}, using default CDN URL")
+                    DEFAULT_CDN_URL
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Bootstrap failed: ${e.message}, using default CDN URL")
+            DEFAULT_CDN_URL
         }
     }
 

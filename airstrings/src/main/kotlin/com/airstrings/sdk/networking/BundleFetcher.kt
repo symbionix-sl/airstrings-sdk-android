@@ -15,14 +15,13 @@ internal sealed class FetchResult {
  * Uses synchronous calls intended to be called from `Dispatchers.IO`.
  * Supports ETag-based conditional requests (If-None-Match / 304 Not Modified).
  */
-internal class BundleFetcher {
-
-    private val baseUrl: String = "https://cdn.airstrings.com"
-
+internal class BundleFetcher(
+    private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .build()
+        .build(),
+) {
 
     fun fetch(
         organizationId: String,

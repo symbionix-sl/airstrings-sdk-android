@@ -14,4 +14,5 @@ public data class AirStringsConfiguration(
     public val environmentId: String,
     public val publicKeys: List<String>,
     public val locale: AirStringsLocale = AirStringsLocale.System,
+    public val apiBaseURL: String = "https://api.airstrings.com",
 )
