@@ -72,6 +72,8 @@ public class AirStrings : Closeable {
     private val store: BundleStore
     private val scope: CoroutineScope
     private val cachedETags = mutableMapOf<String, String>()
+    private val cachedRevisions = mutableMapOf<String, Int>()
+    private var activeRefreshJob: kotlinx.coroutines.Job? = null
     private var lifecycleObserver: DefaultLifecycleObserver? = null
 
     /**
@@ -111,7 +113,11 @@ public class AirStrings : Closeable {
 
     /**
      * Switches to a new locale. Loads cached bundle instantly if available,
-     * then fetches the latest from CDN.
+     * then fetches the latest from CDN in the background.
+     *
+     * When no cached bundle exists for the new locale, keeps previous strings
+     * visible until the network fetch completes. Stale translations are better
+     * than flashing raw keys.
      */
     public suspend fun setLocale(bcp47: String) {
         _currentLocale.value = bcp47
@@ -126,34 +132,49 @@ public class AirStrings : Closeable {
             if (bundle != null) {
                 try {
                     verifier.verify(bundle)
-                    _strings.value = bundle.rawStrings
-                    _entries.value = bundle.strings
-                    _revision.value = bundle.revision
+                    applyBundleInternal(bundle)
                     cachedETags[bcp47] = cached.etag ?: ""
                 } catch (e: AirStringsError) {
                     Log.e(TAG, "Cached bundle verification failed for $bcp47, clearing cache")
                     withContext(Dispatchers.IO) {
                         store.delete(configuration.projectId, configuration.environmentId, bcp47)
                     }
-                    _strings.value = emptyMap()
-                    _entries.value = emptyMap()
-                    _revision.value = 0
+                    // Don't clear strings — keep previous strings visible until fresh fetch
                 }
             }
-        } else {
-            _strings.value = emptyMap()
-            _entries.value = emptyMap()
-            _revision.value = 0
         }
+        // No cached bundle for new locale: keep previous strings visible
+        // until the network fetch completes. Stale translations are better
+        // than flashing raw keys.
 
-        refresh()
+        // Bypass refresh coalescing — if a refresh for the previous locale is
+        // in flight, awaiting it via refresh() would return without ever
+        // fetching the new locale. Call performRefresh() directly to guarantee
+        // the new locale is fetched.
+        performRefresh()
     }
 
     /**
      * Fetches the latest bundle from CDN for the current locale.
      * Uses ETag for conditional requests. Silent on network errors.
+     * Coalesces concurrent calls — if a refresh is already in flight, callers await the existing one.
      */
     public suspend fun refresh() {
+        val existing = activeRefreshJob
+        if (existing != null && existing.isActive) {
+            existing.join()
+            return
+        }
+
+        val job = scope.launch {
+            performRefresh()
+        }
+        activeRefreshJob = job
+        job.join()
+        activeRefreshJob = null
+    }
+
+    private suspend fun performRefresh() {
         val locale = _currentLocale.value
 
         try {
@@ -186,8 +207,9 @@ public class AirStrings : Closeable {
                     }
 
                     // Anti-downgrade: don't replace newer revision with older for same locale
-                    if (bundle.locale == _currentLocale.value && bundle.revision < _revision.value) {
-                        Log.w(TAG, "Ignoring stale bundle: rev ${bundle.revision} < current ${_revision.value}")
+                    val knownRevision = cachedRevisions[bundle.locale] ?: 0
+                    if (bundle.revision < knownRevision) {
+                        Log.w(TAG, "Ignoring stale bundle: rev ${bundle.revision} < current $knownRevision for ${bundle.locale}")
                         return
                     }
 
@@ -198,9 +220,7 @@ public class AirStrings : Closeable {
 
                     // Only apply if locale hasn't changed during fetch
                     if (locale == _currentLocale.value) {
-                        _strings.value = bundle.rawStrings
-                        _entries.value = bundle.strings
-                        _revision.value = bundle.revision
+                        applyBundleInternal(bundle)
                         _isReady.value = true
 
                         withContext(Dispatchers.Main) {
@@ -334,6 +354,13 @@ public class AirStrings : Closeable {
 
     // MARK: - Private
 
+    private fun applyBundleInternal(bundle: StringBundle) {
+        _strings.value = bundle.rawStrings
+        _entries.value = bundle.strings
+        _revision.value = bundle.revision
+        cachedRevisions[bundle.locale] = bundle.revision
+    }
+
     private fun loadCachedBundle() {
         val locale = _currentLocale.value
         val cached = store.load(configuration.projectId, configuration.environmentId, locale) ?: return
@@ -346,9 +373,7 @@ public class AirStrings : Closeable {
 
         try {
             verifier.verify(bundle)
-            _strings.value = bundle.rawStrings
-            _entries.value = bundle.strings
-            _revision.value = bundle.revision
+            applyBundleInternal(bundle)
             _isReady.value = true
             cached.etag?.let { cachedETags[locale] = it }
         } catch (e: AirStringsError) {

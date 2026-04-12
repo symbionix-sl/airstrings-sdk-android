@@ -164,4 +164,52 @@ class AirStringsTest {
         )
         assertEquals("Static text", sut.format("msg", mapOf("unused" to 42, "also_unused" to "value")))
     }
+
+    // MARK: - Locale switch: previous strings retained
+
+    @Test
+    @DisplayName("setLocale keeps previous strings when no cache exists")
+    fun setLocaleKeepsPreviousStringsWhenNoCacheExists() = kotlinx.coroutines.test.runTest {
+        val sut = makeSutWithStrings(
+            strings = mapOf(
+                "title" to StringEntry("Hello", StringFormat.TEXT),
+                "subtitle" to StringEntry("World", StringFormat.TEXT),
+            ),
+        )
+
+        // Switch to a locale with no cached bundle — network will fail
+        sut.setLocale("fr")
+
+        // Previous strings must still be accessible, not cleared to empty
+        assertEquals("Hello", sut["title"])
+        assertEquals("World", sut["subtitle"])
+        assert(sut.strings.value.isNotEmpty())
+    }
+
+    @Test
+    @DisplayName("setLocale keeps string entries when no cache exists")
+    fun setLocaleKeepsStringEntriesWhenNoCacheExists() = kotlinx.coroutines.test.runTest {
+        val sut = makeSutWithStrings(
+            strings = mapOf("greeting" to StringEntry("Hola", StringFormat.TEXT)),
+        )
+
+        sut.setLocale("de")
+
+        // format() should still work with previous entries
+        assertEquals("Hola", sut.format("greeting", emptyMap()))
+    }
+
+    @Test
+    @DisplayName("setLocale updates currentLocale immediately")
+    fun setLocaleUpdatesCurrentLocaleImmediately() = kotlinx.coroutines.test.runTest {
+        val sut = makeSutWithStrings(
+            strings = mapOf("key" to StringEntry("value", StringFormat.TEXT)),
+        )
+
+        sut.setLocale("ja")
+
+        assertEquals("ja", sut.currentLocale.value)
+        // And strings are still there
+        assertEquals("value", sut["key"])
+    }
 }

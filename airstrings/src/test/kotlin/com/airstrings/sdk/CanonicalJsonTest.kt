@@ -186,6 +186,25 @@ class CanonicalJsonTest {
     }
 
     @Test
+    @DisplayName("string entry has sorted keys inside object (format before value)")
+    fun stringEntrySortedKeysInsideObject() {
+        val bundle = StringBundle(
+            formatVersion = 1,
+            projectId = "proj_test12345678",
+            locale = "en",
+            revision = 1,
+            createdAt = "2026-01-01T00:00:00Z",
+            keyId = "key_test_01",
+            signature = "dummy",
+            strings = mapOf("hello" to textEntry("Hello")),
+        )
+
+        val result = String(CanonicalJson.signedContent(bundle), Charsets.UTF_8)
+
+        assertTrue(result.contains("\"hello\":{\"format\":\"text\",\"value\":\"Hello\"}"))
+    }
+
+    @Test
     @DisplayName("mixed text and icu entries sorted correctly")
     fun mixedTextAndIcuEntries() {
         val bundle = StringBundle(
