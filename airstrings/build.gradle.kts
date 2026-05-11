@@ -15,7 +15,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 // Debug wiring is the originating use case). Versions remain pinned to the
 // same values previously declared in gradle/libs.versions.toml.
 plugins {
-    id("com.android.library") version "9.0.1"
+    id("com.android.library") version "9.1.1"
     // AGP 9 built-in Kotlin handles Android sources; the kotlin.android plugin
     // is no longer applied here. Matches BioPulse Phase 8.5 D-04/D-05.
 }
