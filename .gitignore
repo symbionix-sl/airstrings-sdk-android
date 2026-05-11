@@ -9,3 +9,12 @@
 .cxx
 local.properties
 **/build/
+
+# AI tooling artifacts (GSD, agent skills, planning, mempalace)
+.gemini/
+.claude/
+.agents/
+.planning/
+.gsd/
+chroma.sqlite3
+entities.json
