@@ -22,6 +22,16 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Declared explicitly so JitPack does not auto-inject a Groovy-style
+    // `publishing { singleVariant('release') }` block — single-quoted Groovy
+    // strings are character literals in Kotlin DSL and fail script compilation.
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
+    }
+
     @Suppress("UnstableApiUsage")
     testOptions {
         unitTests.isReturnDefaultValues = true
