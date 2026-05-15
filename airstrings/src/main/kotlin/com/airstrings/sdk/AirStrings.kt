@@ -177,6 +177,13 @@ public class AirStrings : Closeable {
     private suspend fun performRefresh() {
         val locale = _currentLocale.value
 
+        // Defense-in-depth: any call site that fires before bootstrap finishes is a no-op,
+        // rather than throwing UninitializedPropertyAccessException into the broad catch.
+        if (!::fetcher.isInitialized) {
+            Log.i(TAG, "Skipping refresh: fetcher not initialized yet (bootstrap in flight)")
+            return
+        }
+
         try {
             val etag = cachedETags[locale]?.ifEmpty { null }
 
@@ -338,7 +345,6 @@ public class AirStrings : Closeable {
             )
 
             instance.loadCachedBundle()
-            instance.observeForeground()
 
             instance.scope.launch {
                 val cdnBaseUrl = withContext(Dispatchers.IO) {
@@ -346,6 +352,14 @@ public class AirStrings : Closeable {
                 }
                 instance.fetcher = BundleFetcher(baseUrl = cdnBaseUrl, client = httpClient)
                 instance.refresh()
+                // Register foreground observer only after fetcher is initialized.
+                // ProcessLifecycleOwner is already STARTED at app create-time, so
+                // addObserver() delivers onStart synchronously to a DefaultLifecycleObserver.
+                // Doing this before fetcher is set raced into performRefresh() and threw
+                // UninitializedPropertyAccessException, which the broad catch swallowed —
+                // leaving _isReady=false and every key rendering as its own fallback on
+                // cold installs with no cached bundle.
+                instance.observeForeground()
             }
 
             return instance
