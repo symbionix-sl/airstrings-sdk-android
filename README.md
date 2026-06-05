@@ -6,14 +6,6 @@ Ed25519-signed localized string bundles for Android. Fetches, verifies, caches, 
 
 ## Installation
 
-### Gradle (Maven Central) — _coming soon_
-
-```kotlin
-dependencies {
-    implementation("com.airstrings:airstrings-android:0.1.0")
-}
-```
-
 ### JitPack
 
 Add JitPack to your project-level `settings.gradle.kts`:
@@ -32,9 +24,11 @@ Then add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.symbionix-sl:airstrings-sdk-android:main-SNAPSHOT")
+    implementation("com.github.symbionix-sl:airstrings-sdk-android:0.3.5")
 }
 ```
+
+### Maven Central — _planned_
 
 ## Quick Start
 
