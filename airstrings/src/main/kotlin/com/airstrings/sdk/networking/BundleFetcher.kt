@@ -15,7 +15,7 @@ internal sealed class FetchResult {
  * Uses synchronous calls intended to be called from `Dispatchers.IO`.
  * Supports ETag-based conditional requests (If-None-Match / 304 Not Modified).
  */
-internal class BundleFetcher(
+internal open class BundleFetcher(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -23,7 +23,7 @@ internal class BundleFetcher(
         .build(),
 ) {
 
-    fun fetch(
+    open fun fetch(
         organizationId: String,
         projectId: String,
         environmentId: String,

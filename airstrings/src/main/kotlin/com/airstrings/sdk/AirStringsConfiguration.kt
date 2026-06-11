@@ -15,4 +15,6 @@ public data class AirStringsConfiguration(
     public val publicKeys: List<String>,
     public val locale: AirStringsLocale = AirStringsLocale.System,
     public val apiBaseURL: String = "https://api.airstrings.com",
+    public val seedEnabled: Boolean = true,
+    public val seedDirectory: String = "airstrings/bundles",
 )

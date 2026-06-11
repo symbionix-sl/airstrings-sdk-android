@@ -12,7 +12,9 @@ import com.airstrings.sdk.models.StringFormat
 import com.airstrings.sdk.networking.BundleFetcher
 import com.airstrings.sdk.networking.FetchResult
 import com.airstrings.sdk.security.BundleVerifier
+import com.airstrings.sdk.storage.AssetSeedSource
 import com.airstrings.sdk.storage.BundleStore
+import com.airstrings.sdk.storage.SeedSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -70,6 +72,7 @@ public class AirStrings : Closeable {
     private val httpClient: OkHttpClient
     private val verifier: BundleVerifier
     private val store: BundleStore
+    private val seedSource: SeedSource?
     private val scope: CoroutineScope
     private val cachedETags = mutableMapOf<String, String>()
     private val cachedRevisions = mutableMapOf<String, Int>()
@@ -122,28 +125,10 @@ public class AirStrings : Closeable {
     public suspend fun setLocale(bcp47: String) {
         _currentLocale.value = bcp47
 
-        // Try loading cached bundle for new locale
-        val cached = withContext(Dispatchers.IO) {
-            store.load(configuration.projectId, configuration.environmentId, bcp47)
+        withContext(Dispatchers.IO) {
+            applyLocalCandidate(bcp47)
         }
-
-        if (cached != null) {
-            val bundle = decodeBundle(cached.data)
-            if (bundle != null) {
-                try {
-                    verifier.verify(bundle)
-                    applyBundleInternal(bundle)
-                    cachedETags[bcp47] = cached.etag ?: ""
-                } catch (e: AirStringsError) {
-                    Log.e(TAG, "Cached bundle verification failed for $bcp47, clearing cache")
-                    withContext(Dispatchers.IO) {
-                        store.delete(configuration.projectId, configuration.environmentId, bcp47)
-                    }
-                    // Don't clear strings — keep previous strings visible until fresh fetch
-                }
-            }
-        }
-        // No cached bundle for new locale: keep previous strings visible
+        // No local candidate for new locale: keep previous strings visible
         // until the network fetch completes. Stale translations are better
         // than flashing raw keys.
 
@@ -276,6 +261,7 @@ public class AirStrings : Closeable {
         store: BundleStore,
         scope: CoroutineScope,
         configuration: AirStringsConfiguration,
+        seedSource: SeedSource? = null,
     ) {
         this.configuration = configuration
         this.fetcher = fetcher
@@ -285,6 +271,7 @@ public class AirStrings : Closeable {
             .build()
         this.verifier = verifier
         this.store = store
+        this.seedSource = seedSource
         this.scope = scope
         this._currentLocale = MutableStateFlow(configuration.locale.resolved())
     }
@@ -295,11 +282,13 @@ public class AirStrings : Closeable {
         store: BundleStore,
         scope: CoroutineScope,
         configuration: AirStringsConfiguration,
+        seedSource: SeedSource?,
     ) {
         this.configuration = configuration
         this.httpClient = httpClient
         this.verifier = verifier
         this.store = store
+        this.seedSource = seedSource
         this.scope = scope
         this._currentLocale = MutableStateFlow(configuration.locale.resolved())
     }
@@ -336,15 +325,22 @@ public class AirStrings : Closeable {
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build()
 
+            val seedSource = if (configuration.seedEnabled) {
+                AssetSeedSource(assets = appContext.assets, directory = configuration.seedDirectory)
+            } else {
+                null
+            }
+
             val instance = AirStrings(
                 httpClient = httpClient,
                 verifier = BundleVerifier(publicKeys = configuration.publicKeys),
                 store = BundleStore(baseDirectory = cacheDir),
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
                 configuration = configuration,
+                seedSource = seedSource,
             )
 
-            instance.loadCachedBundle()
+            instance.loadLocalBundle()
 
             instance.scope.launch {
                 val cdnBaseUrl = withContext(Dispatchers.IO) {
@@ -375,24 +371,71 @@ public class AirStrings : Closeable {
         cachedRevisions[bundle.locale] = bundle.revision
     }
 
-    private fun loadCachedBundle() {
-        val locale = _currentLocale.value
-        val cached = store.load(configuration.projectId, configuration.environmentId, locale) ?: return
+    internal fun loadLocalBundle() {
+        applyLocalCandidate(_currentLocale.value)
+    }
+
+    private class LocalCandidate(
+        val bundle: StringBundle,
+        val data: ByteArray,
+        val etag: String?,
+    )
+
+    private fun applyLocalCandidate(locale: String) {
+        val cached = cachedCandidate(locale)
+        val seed = seedCandidate(locale)
+
+        val seedWins = seed != null && (cached == null || seed.bundle.revision > cached.bundle.revision)
+        val winner = (if (seedWins) seed else cached) ?: return
+
+        if (seedWins) {
+            store.save(winner.data, configuration.projectId, configuration.environmentId, locale, null)
+            cachedETags.remove(locale)
+        } else if (winner.etag != null) {
+            cachedETags[locale] = winner.etag
+        } else {
+            cachedETags.remove(locale)
+        }
+
+        applyBundleInternal(winner.bundle)
+        _isReady.value = true
+    }
+
+    private fun cachedCandidate(locale: String): LocalCandidate? {
+        val cached = store.load(configuration.projectId, configuration.environmentId, locale) ?: return null
 
         val bundle = decodeBundle(cached.data)
         if (bundle == null) {
             store.delete(configuration.projectId, configuration.environmentId, locale)
-            return
+            return null
         }
 
-        try {
+        return try {
             verifier.verify(bundle)
-            applyBundleInternal(bundle)
-            _isReady.value = true
-            cached.etag?.let { cachedETags[locale] = it }
+            LocalCandidate(bundle = bundle, data = cached.data, etag = cached.etag)
         } catch (e: AirStringsError) {
-            Log.e(TAG, "Cached bundle verification failed, clearing cache")
+            Log.e(TAG, "Cached bundle verification failed for $locale, clearing cache")
             store.delete(configuration.projectId, configuration.environmentId, locale)
+            null
+        }
+    }
+
+    private fun seedCandidate(locale: String): LocalCandidate? {
+        val data = seedSource?.load(locale) ?: return null
+        val bundle = decodeBundle(data) ?: return null
+
+        return try {
+            verifier.verify(bundle)
+            if (bundle.projectId != configuration.projectId) {
+                throw AirStringsError.SeedProjectMismatch(expected = configuration.projectId, actual = bundle.projectId)
+            }
+            if (bundle.locale != locale) {
+                throw AirStringsError.SeedLocaleMismatch(expected = locale, actual = bundle.locale)
+            }
+            LocalCandidate(bundle = bundle, data = data, etag = null)
+        } catch (e: AirStringsError) {
+            Log.e(TAG, "Seed bundle rejected for $locale: ${e.message}")
+            null
         }
     }
 

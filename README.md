@@ -24,7 +24,7 @@ Then add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.symbionix-sl:airstrings-sdk-android:0.3.5")
+    implementation("com.github.symbionix-sl:airstrings-sdk-android:0.4.0")
 }
 ```
 
@@ -132,6 +132,60 @@ Every bundle is Ed25519-signed and verified before use:
 - Automatic refresh when app enters foreground
 - Corrupted cache is detected via re-verification and silently replaced
 
+## Bundled Fallback (offline-safe builds)
+
+Ship published, signed bundles inside your APK so a cold start with no network serves real strings instead of key names. The SDK seeds from `assets/airstrings/bundles/` automatically — no configuration required. Defined by the bundled fallback contract (`docs/contracts/bundled-fallback.md` in the AirStrings platform repo).
+
+### 1. Pull and commit the seed directory
+
+```bash
+airstrings bundles pull
+git add airstrings/bundles
+git commit -m "chore: update bundled fallback strings"
+```
+
+This writes the published, signed bundles for the active environment into `airstrings/bundles/`. Run the pull in CI or as a pre-release step to keep the committed seed directory fresh.
+
+### 2. Package the seed directory into assets
+
+Either copy the committed folder into your app module:
+
+```
+app/src/main/assets/airstrings/bundles/
+```
+
+or map it without copying, by pointing an extra asset root at the folder that *contains* the committed `airstrings/` directory (asset paths are packaged relative to the mapped root, and the SDK reads `assets/airstrings/bundles/`):
+
+```kotlin
+android {
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("../localization")
+        }
+    }
+}
+```
+
+with the seed directory committed at `localization/airstrings/bundles/`.
+
+### How seeding behaves
+
+- On startup and on `setLocale`, the cached bundle and the seed bundle compete as candidates: each is fully Ed25519-verified, and the highest revision wins (ties go to the cache)
+- A winning seed is persisted to the local cache, so later cold starts work even offline
+- A seed never downgrades a newer cached or fetched bundle
+- A tampered, wrong-project, or wrong-locale seed is rejected with an error and never served or cached
+- A missing seed directory is silently ignored
+
+### Configuration
+
+```kotlin
+val config = AirStringsConfiguration(
+    // ...
+    seedEnabled = true,                      // default; set false to disable seeding
+    seedDirectory = "airstrings/bundles",    // default asset path, overridable
+)
+```
+
 ## Error Handling
 
 The SDK never crashes and never throws. All errors degrade gracefully:
@@ -142,6 +196,8 @@ The SDK never crashes and never throws. All errors degrade gracefully:
 | Network error | Keeps serving cached strings |
 | Signature verification fails | Bundle rejected, cache deleted, previous strings kept |
 | Unknown key or format version | Bundle rejected |
+| Tampered or mismatched seed | Seed rejected with error, never served, never cached |
+| Missing seed directory or asset | Silent no-op, identical to pre-seed behavior |
 
 ## Cleanup
 

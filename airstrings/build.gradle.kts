@@ -78,4 +78,5 @@ dependencies {
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.11.3")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.3.0")
+    testImplementation("org.json:json:20240303")
 }
