@@ -30,4 +30,4 @@ jobs:
         run: ./gradlew :airstrings:assembleRelease
 
       - name: Unit tests
-        run: ./gradlew :airstrings:testReleaseUnitTest
+        run: ./gradlew :airstrings:test
