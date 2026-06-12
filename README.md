@@ -213,6 +213,10 @@ airStrings.close() // Cancels coroutines, removes lifecycle observer
 - Kotlin 2.0+
 - `android.permission.INTERNET` (declared by the SDK)
 
+## Links
+
+- **Website:** https://airstrings.com
+
 ## License
 
 MIT — see [LICENSE](LICENSE) for details.
