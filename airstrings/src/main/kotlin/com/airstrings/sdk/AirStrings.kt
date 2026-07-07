@@ -308,7 +308,7 @@ public class AirStrings : Closeable {
         private const val DEFAULT_CDN_URL = "https://cdn.airstrings.com"
 
         /**
-         * Creates a new AirStrings instance and immediately loads cached strings + fetches fresh ones.
+         * Creates a new AirStrings instance and asynchronously loads local strings + fetches fresh ones.
          *
          * Calls the bootstrap endpoint to discover the CDN URL before fetching bundles.
          * Falls back to the default CDN URL if bootstrap fails.
@@ -340,23 +340,7 @@ public class AirStrings : Closeable {
                 seedSource = seedSource,
             )
 
-            instance.loadLocalBundle()
-
-            instance.scope.launch {
-                val cdnBaseUrl = withContext(Dispatchers.IO) {
-                    instance.bootstrap(configuration.apiBaseURL)
-                }
-                instance.fetcher = BundleFetcher(baseUrl = cdnBaseUrl, client = httpClient)
-                instance.refresh()
-                // Register foreground observer only after fetcher is initialized.
-                // ProcessLifecycleOwner is already STARTED at app create-time, so
-                // addObserver() delivers onStart synchronously to a DefaultLifecycleObserver.
-                // Doing this before fetcher is set raced into performRefresh() and threw
-                // UninitializedPropertyAccessException, which the broad catch swallowed —
-                // leaving _isReady=false and every key rendering as its own fallback on
-                // cold installs with no cached bundle.
-                instance.observeForeground()
-            }
+            instance.start()
 
             return instance
         }
@@ -369,6 +353,29 @@ public class AirStrings : Closeable {
         _entries.value = bundle.strings
         _revision.value = bundle.revision
         cachedRevisions[bundle.locale] = bundle.revision
+    }
+
+    internal fun start(): kotlinx.coroutines.Job {
+        return scope.launch {
+            withContext(Dispatchers.IO) {
+                loadLocalBundle()
+            }
+            if (!::fetcher.isInitialized) {
+                val cdnBaseUrl = withContext(Dispatchers.IO) {
+                    bootstrap(configuration.apiBaseURL)
+                }
+                fetcher = BundleFetcher(baseUrl = cdnBaseUrl, client = httpClient)
+            }
+            refresh()
+            // Register foreground observer only after fetcher is initialized.
+            // ProcessLifecycleOwner is already STARTED at app create-time, so
+            // addObserver() delivers onStart synchronously to a DefaultLifecycleObserver.
+            // Doing this before fetcher is set raced into performRefresh() and threw
+            // UninitializedPropertyAccessException, which the broad catch swallowed —
+            // leaving _isReady=false and every key rendering as its own fallback on
+            // cold installs with no cached bundle.
+            observeForeground()
+        }
     }
 
     internal fun loadLocalBundle() {

@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- `AirStrings.create()` no longer runs the local bundle load (seed asset I/O, JSON decode, Ed25519 verification, and the disk write when the seed wins) synchronously on the caller thread. Local candidates now load on `Dispatchers.IO` inside the SDK's coroutine scope, per the bundled-fallback contract's "seeding never blocks app startup" guarantee. Ordering is unchanged: local candidates are still applied before the first network refresh result, so anti-downgrade semantics are preserved.
+
 ## [0.4.0] - 2026-06-10
 
 ### Added

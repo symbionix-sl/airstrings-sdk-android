@@ -10,7 +10,10 @@ import com.airstrings.sdk.security.Base64Url
 import com.airstrings.sdk.security.BundleVerifier
 import com.airstrings.sdk.storage.BundleStore
 import com.airstrings.sdk.storage.SeedSource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import org.bouncycastle.crypto.generators.Ed25519KeyPairGenerator
@@ -26,6 +29,7 @@ import java.io.File
 import java.io.IOException
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -113,11 +117,25 @@ class SeedingTest {
         }
     }
 
+    private class FixedBundleFetcher(private val data: ByteArray) : BundleFetcher(baseUrl = "https://cdn.invalid") {
+        override fun fetch(
+            organizationId: String,
+            projectId: String,
+            environmentId: String,
+            locale: String,
+            ifNoneMatch: String?,
+        ): FetchResult {
+            return FetchResult.Success(data = data, etag = null)
+        }
+    }
+
     private fun makeStore(): BundleStore = BundleStore(baseDirectory = tempDir)
 
     private fun makeSut(
         seedSource: SeedSource?,
         store: BundleStore = makeStore(),
+        fetcher: BundleFetcher = FailingBundleFetcher(),
+        scope: CoroutineScope = TestScope(),
     ): AirStrings {
         val configuration = AirStringsConfiguration(
             organizationId = "org_test12345678",
@@ -127,10 +145,10 @@ class SeedingTest {
             locale = AirStringsLocale.Fixed("en"),
         )
         return AirStrings(
-            fetcher = FailingBundleFetcher(),
+            fetcher = fetcher,
             verifier = BundleVerifier(publicKeys = listOf(publicKeyBase64)),
             store = store,
-            scope = TestScope(),
+            scope = scope,
             configuration = configuration,
             seedSource = seedSource,
         )
@@ -303,6 +321,49 @@ class SeedingTest {
         assertEquals(9, sut.revision.value)
         assertTrue(sut.isReady.value)
         assertContentEquals(frSeed, store.load(PROJECT_ID, ENV_ID, "fr")!!.data)
+    }
+
+    @Test
+    @DisplayName("start loads the seed off the caller thread")
+    fun startLoadsSeedOffCallerThread() = runTest {
+        val seed = signedBundleBytes(revision = 7, strings = mapOf("hello" to "Bonjour"))
+        val loadThreads = CopyOnWriteArrayList<Thread>()
+        val callerThread = Thread.currentThread()
+        val sut = makeSut(
+            seedSource = SeedSource { locale ->
+                loadThreads.add(Thread.currentThread())
+                if (locale == "en") seed else null
+            },
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        )
+
+        sut.start().join()
+
+        assertTrue(loadThreads.isNotEmpty())
+        assertFalse(loadThreads.contains(callerThread))
+        sut.close()
+    }
+
+    @Test
+    @DisplayName("start applies the local candidate before the first refresh result")
+    fun startAppliesLocalCandidateBeforeFirstRefreshResult() = runTest {
+        val store = makeStore()
+        val seed = signedBundleBytes(revision = 7, strings = mapOf("greeting" to "Seeded"))
+        val stale = signedBundleBytes(revision = 5, strings = mapOf("greeting" to "Stale"))
+        val sut = makeSut(
+            seedSource = SeedSource { if (it == "en") seed else null },
+            store = store,
+            fetcher = FixedBundleFetcher(stale),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        )
+
+        sut.start().join()
+
+        assertEquals("Seeded", sut.strings.value["greeting"])
+        assertEquals(7, sut.revision.value)
+        assertTrue(sut.isReady.value)
+        assertContentEquals(seed, store.load(PROJECT_ID, ENV_ID, "en")!!.data)
+        sut.close()
     }
 
     private companion object {
