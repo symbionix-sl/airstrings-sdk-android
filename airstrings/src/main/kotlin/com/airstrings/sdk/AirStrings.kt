@@ -443,9 +443,9 @@ public class AirStrings : Closeable {
         if (pendingExposures.isEmpty()) return
         for ((dedupeKey, event) in pendingExposures) {
             if (event.key != key) continue
-            if (pendingExposures.remove(dedupeKey) == null) continue
-            firedExposures.add(dedupeKey)
-            scope.launch { onExposure?.invoke(event) }
+            val claimed = firedExposures.add(dedupeKey)
+            pendingExposures.remove(dedupeKey)
+            if (claimed) scope.launch { onExposure?.invoke(event) }
         }
     }
 
