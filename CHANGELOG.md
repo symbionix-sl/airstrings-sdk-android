@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-07-13
+## [1.1.0] - 2026-07-14
+
+### Added
+
+- String Variants (A/B testing). `setAssignmentId(id)` selects experiment variants for a stable assignment id; `onExposure` (with the new `ExposureEvent` public data class) fires once per `(key, experiment, variant, assignment)` on first read, delivered asynchronously on the main thread, so you can forward exposures to analytics. Experiment metadata is covered by a separate `experiments_signature`, verified independently of the base bundle signature; a missing or invalid experiments signature soft-fails to base values while the bundle itself is still served. Selection is stateless and deterministic (SHA-256 bucketing), matching the iOS and web SDKs. Additive only — existing integrations compile and behave unchanged.
 
 First stable release. The public API is now frozen under Semantic Versioning: no breaking change ships without a major (2.0.0) bump. See the SDK stability and deprecation policy in `docs/contracts/sdk-requirements.md`.
 

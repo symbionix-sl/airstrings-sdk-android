@@ -115,6 +115,34 @@ airStrings.onStringsUpdated = { locale, revision ->
 }
 ```
 
+## Experiments (A/B Variants)
+
+Assign a stable id and the SDK serves the selected variant for every experiment-backed key. Variant metadata is signed independently — a missing or invalid experiments signature safely falls back to base values.
+
+```kotlin
+// Stable per-user (or per-device) id — same id always maps to the same variant
+airStrings.setAssignmentId(userId)
+
+// Forward exposures to your analytics. Fires once per (key, experiment, variant, assignment),
+// asynchronously on the main thread.
+airStrings.onExposure = { event ->
+    analytics.track(
+        "experiment_exposure",
+        mapOf(
+            "experiment" to event.experimentId,
+            "variant" to event.variant,
+            "key" to event.key,
+        ),
+    )
+}
+
+// Reads now return the assigned variant's value
+val cta = airStrings["checkout.cta"]
+
+// Clear the assignment to return to base values
+airStrings.setAssignmentId(null)
+```
+
 ## Security
 
 Every bundle is Ed25519-signed and verified before use:

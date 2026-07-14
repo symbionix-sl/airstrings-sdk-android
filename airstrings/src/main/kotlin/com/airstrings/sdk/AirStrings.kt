@@ -12,6 +12,7 @@ import com.airstrings.sdk.models.StringFormat
 import com.airstrings.sdk.networking.BundleFetcher
 import com.airstrings.sdk.networking.FetchResult
 import com.airstrings.sdk.security.BundleVerifier
+import com.airstrings.sdk.security.ExperimentSelection
 import com.airstrings.sdk.storage.AssetSeedSource
 import com.airstrings.sdk.storage.BundleStore
 import com.airstrings.sdk.storage.SeedSource
@@ -30,6 +31,7 @@ import java.io.Closeable
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -55,6 +57,9 @@ public class AirStrings : Closeable {
     /** Called when strings update mid-session. Receives locale and new revision. Always called on main thread. */
     public var onStringsUpdated: ((locale: String, revision: Int) -> Unit)? = null
 
+    /** Called on read when an experiment variant is first exposed. Delivered asynchronously on the main thread. */
+    public var onExposure: ((ExposureEvent) -> Unit)? = null
+
     // MARK: - Private mutable state
 
     private val _strings = MutableStateFlow<Map<String, String>>(emptyMap())
@@ -76,6 +81,19 @@ public class AirStrings : Closeable {
     private val scope: CoroutineScope
     private val cachedETags = mutableMapOf<String, String>()
     private val cachedRevisions = mutableMapOf<String, Int>()
+
+    @Volatile
+    private var assignmentId: String? = null
+
+    @Volatile
+    private var experimentsTrusted: Boolean = false
+
+    @Volatile
+    private var variantOverrides: Map<String, String> = emptyMap()
+
+    private val pendingExposures = ConcurrentHashMap<String, ExposureEvent>()
+    private val firedExposures: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private var activeRefreshJob: kotlinx.coroutines.Job? = null
     private var lifecycleObserver: DefaultLifecycleObserver? = null
 
@@ -86,6 +104,7 @@ public class AirStrings : Closeable {
      * For Compose, collect the [strings] StateFlow via `collectAsStateWithLifecycle()`.
      */
     public operator fun get(key: String): String {
+        fireExposures(key)
         return _strings.value[key] ?: key
     }
 
@@ -99,18 +118,39 @@ public class AirStrings : Closeable {
      */
     public fun format(key: String, args: Map<String, Any>): String {
         val entry = _entries.value[key] ?: return key
+        fireExposures(key)
+        val value = variantOverrides[key] ?: entry.value
 
         return when (entry.format) {
-            StringFormat.TEXT -> entry.value
+            StringFormat.TEXT -> value
             StringFormat.ICU -> {
                 try {
                     val locale = Locale.forLanguageTag(_currentLocale.value)
-                    val formatter = MessageFormat(entry.value, locale)
+                    val formatter = MessageFormat(value, locale)
                     formatter.format(args)
                 } catch (_: Exception) {
-                    entry.value
+                    value
                 }
             }
+        }
+    }
+
+    /**
+     * Sets or clears the experiment assignment id and recomputes variant selection against the
+     * current bundle (no re-verification). Passing `null` clears all overrides and pending exposures.
+     * Fires [onStringsUpdated] on the main thread when the served overrides change.
+     */
+    public fun setAssignmentId(id: String?) {
+        val previousOverrides = variantOverrides
+        assignmentId = id
+        if (id == null) {
+            pendingExposures.clear()
+        }
+        recomputeVariants()
+        if (variantOverrides != previousOverrides) {
+            val locale = _currentLocale.value
+            val rev = _revision.value
+            scope.launch { onStringsUpdated?.invoke(locale, rev) }
         }
     }
 
@@ -212,7 +252,7 @@ public class AirStrings : Closeable {
 
                     // Only apply if locale hasn't changed during fetch
                     if (locale == _currentLocale.value) {
-                        applyBundleInternal(bundle)
+                        applyBundleInternal(bundle, computeExperimentsTrust(bundle))
                         _isReady.value = true
 
                         withContext(Dispatchers.Main) {
@@ -348,11 +388,65 @@ public class AirStrings : Closeable {
 
     // MARK: - Private
 
-    private fun applyBundleInternal(bundle: StringBundle) {
-        _strings.value = bundle.rawStrings
+    private fun applyBundleInternal(bundle: StringBundle, trusted: Boolean) {
+        experimentsTrusted = trusted
         _entries.value = bundle.strings
         _revision.value = bundle.revision
         cachedRevisions[bundle.locale] = bundle.revision
+        recomputeVariants()
+    }
+
+    private fun computeExperimentsTrust(bundle: StringBundle): Boolean {
+        if (bundle.strings.values.none { it.experiment != null }) return false
+        return verifier.verifyExperiments(bundle)
+    }
+
+    private fun recomputeVariants() {
+        val entries = _entries.value
+        val assignment = assignmentId
+        val overrides = mutableMapOf<String, String>()
+
+        if (experimentsTrusted && assignment != null) {
+            for ((key, entry) in entries) {
+                if (entry.experiment == null) continue
+                when (val selection = ExperimentSelection.select(entry, assignment)) {
+                    ExperimentSelection.Selection.Base -> {}
+                    is ExperimentSelection.Selection.Control -> {
+                        overrides[key] = entry.value
+                        stageExposure(key, selection.experimentId, "control", assignment)
+                    }
+                    is ExperimentSelection.Selection.Variant -> {
+                        overrides[key] = selection.value
+                        stageExposure(key, selection.experimentId, selection.name, assignment)
+                    }
+                }
+            }
+        }
+
+        variantOverrides = overrides
+        _strings.value = entries.mapValues { (key, entry) -> overrides[key] ?: entry.value }
+    }
+
+    private fun stageExposure(key: String, experimentId: String, variant: String, assignmentId: String) {
+        val dedupeKey = "$key\n$experimentId\n$variant\n$assignmentId"
+        if (dedupeKey in firedExposures) return
+        pendingExposures[dedupeKey] = ExposureEvent(
+            key = key,
+            experimentId = experimentId,
+            variant = variant,
+            locale = _currentLocale.value,
+            assignmentId = assignmentId,
+        )
+    }
+
+    private fun fireExposures(key: String) {
+        if (pendingExposures.isEmpty()) return
+        for ((dedupeKey, event) in pendingExposures) {
+            if (event.key != key) continue
+            if (pendingExposures.remove(dedupeKey) == null) continue
+            firedExposures.add(dedupeKey)
+            scope.launch { onExposure?.invoke(event) }
+        }
     }
 
     internal fun start(): kotlinx.coroutines.Job {
@@ -404,7 +498,7 @@ public class AirStrings : Closeable {
             cachedETags.remove(locale)
         }
 
-        applyBundleInternal(winner.bundle)
+        applyBundleInternal(winner.bundle, computeExperimentsTrust(winner.bundle))
         _isReady.value = true
     }
 
