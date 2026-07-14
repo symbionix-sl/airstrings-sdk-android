@@ -41,6 +41,52 @@ internal object CanonicalJson {
         return json.toString().toByteArray(Charsets.UTF_8)
     }
 
+    // Recipe pinned: top-level order format_version, project_id, locale, revision,
+    // created_at, experiments — the experiments block is signed separately from
+    // `signedContent`. experiments are keyed by the string key carrying an experiment
+    // (sorted); each block: allocation (sorted names -> bare int), id, variants
+    // (sorted names -> string). Any change breaks cross-platform signature parity.
+    fun experimentsSignedContent(bundle: StringBundle): ByteArray {
+        val json = StringBuilder()
+        json.append('{')
+        json.append("\"format_version\":").append(bundle.formatVersion)
+        json.append(",\"project_id\":").append(escapeString(bundle.projectId))
+        json.append(",\"locale\":").append(escapeString(bundle.locale))
+        json.append(",\"revision\":").append(bundle.revision)
+        json.append(",\"created_at\":").append(escapeString(bundle.createdAt))
+        json.append(",\"experiments\":{")
+
+        val experimentKeys = bundle.strings.keys
+            .filter { bundle.strings[it]?.experiment != null }
+            .sorted()
+        for ((i, key) in experimentKeys.withIndex()) {
+            if (i > 0) json.append(',')
+            val experiment = bundle.strings[key]!!.experiment!!
+            json.append(escapeString(key)).append(":{")
+
+            json.append("\"allocation\":{")
+            for ((j, name) in experiment.allocation.keys.sorted().withIndex()) {
+                if (j > 0) json.append(',')
+                json.append(escapeString(name)).append(':').append(experiment.allocation.getValue(name))
+            }
+            json.append('}')
+
+            json.append(",\"id\":").append(escapeString(experiment.id))
+
+            json.append(",\"variants\":{")
+            for ((j, name) in experiment.variants.keys.sorted().withIndex()) {
+                if (j > 0) json.append(',')
+                json.append(escapeString(name)).append(':').append(escapeString(experiment.variants.getValue(name)))
+            }
+            json.append('}')
+
+            json.append('}')
+        }
+
+        json.append("}}")
+        return json.toString().toByteArray(Charsets.UTF_8)
+    }
+
     private fun escapeString(s: String): String {
         val result = StringBuilder("\"")
         for (ch in s) {

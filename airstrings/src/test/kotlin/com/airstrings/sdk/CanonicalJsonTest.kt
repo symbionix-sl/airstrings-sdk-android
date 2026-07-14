@@ -1,6 +1,7 @@
 package com.airstrings.sdk
 
 import com.airstrings.sdk.models.CanonicalJson
+import com.airstrings.sdk.models.Experiment
 import com.airstrings.sdk.models.StringBundle
 import com.airstrings.sdk.models.StringEntry
 import com.airstrings.sdk.models.StringFormat
@@ -226,5 +227,37 @@ class CanonicalJsonTest {
         assertTrue(result.contains("\"a.icu\":{\"format\":\"icu\""))
         assertTrue(result.contains("\"b.text\":{\"format\":\"text\""))
         assertTrue(result.indexOf("\"a.icu\"") < result.indexOf("\"b.text\""))
+    }
+
+    @Test
+    @DisplayName("experiments contract example produces exact output")
+    fun experimentsContractExample() {
+        val bundle = StringBundle(
+            formatVersion = 1,
+            projectId = "proj_x",
+            locale = "en-US",
+            revision = 42,
+            createdAt = "2026-07-14T10:00:00Z",
+            keyId = "key_prod_01",
+            signature = "dummy",
+            strings = mapOf(
+                "checkout.cta" to StringEntry(
+                    value = "Continue",
+                    format = StringFormat.TEXT,
+                    experiment = Experiment(
+                        id = "exp_a1b2c3d4e5f6",
+                        allocation = mapOf("control" to 50, "variant_a" to 50),
+                        variants = mapOf("variant_a" to "Continue"),
+                    ),
+                ),
+            ),
+        )
+
+        val result = String(CanonicalJson.experimentsSignedContent(bundle), Charsets.UTF_8)
+
+        val expected =
+            """{"format_version":1,"project_id":"proj_x","locale":"en-US","revision":42,"created_at":"2026-07-14T10:00:00Z","experiments":{"checkout.cta":{"allocation":{"control":50,"variant_a":50},"id":"exp_a1b2c3d4e5f6","variants":{"variant_a":"Continue"}}}}"""
+
+        assertEquals(expected, result)
     }
 }

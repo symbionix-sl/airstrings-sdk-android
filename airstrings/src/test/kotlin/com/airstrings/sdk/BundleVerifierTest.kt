@@ -2,6 +2,7 @@ package com.airstrings.sdk
 
 import java.util.Base64
 import com.airstrings.sdk.models.CanonicalJson
+import com.airstrings.sdk.models.Experiment
 import com.airstrings.sdk.models.StringBundle
 import com.airstrings.sdk.models.StringEntry
 import com.airstrings.sdk.models.StringFormat
@@ -18,7 +19,9 @@ import org.junit.jupiter.api.assertDoesNotThrow
 import org.junit.jupiter.api.assertThrows
 import java.security.SecureRandom
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 @DisplayName("BundleVerifier")
 class BundleVerifierTest {
@@ -300,5 +303,91 @@ class BundleVerifierTest {
 
         val error = assertThrows<AirStringsError> { verifier.verify(bundle) }
         assertIs<AirStringsError.InvalidKeyIdEncoding>(error)
+    }
+
+    private fun experimentEntry(
+        allocation: Map<String, Int> = mapOf("control" to 50, "variant_a" to 50),
+    ): StringEntry = StringEntry(
+        value = "Continue",
+        format = StringFormat.TEXT,
+        experiment = Experiment(
+            id = "exp_a1b2c3d4e5f6",
+            allocation = allocation,
+            variants = mapOf("variant_a" to "Continue"),
+        ),
+    )
+
+    private fun signedExperimentsBundle(
+        strings: Map<String, StringEntry>,
+        privateKey: Ed25519PrivateKeyParameters,
+        publicKey: Ed25519PublicKeyParameters,
+    ): StringBundle {
+        val resolvedKeyId = Base64.getEncoder().encodeToString(publicKey.encoded)
+        val unsigned = StringBundle(
+            formatVersion = 1,
+            projectId = "proj_x",
+            locale = "en-US",
+            revision = 42,
+            createdAt = "2026-07-14T10:00:00Z",
+            keyId = resolvedKeyId,
+            signature = "",
+            strings = strings,
+        )
+        val canonicalBytes = CanonicalJson.experimentsSignedContent(unsigned)
+        val signatureBase64url = Base64Url.encode(sign(canonicalBytes, privateKey))
+        return unsigned.copy(experimentsSignature = signatureBase64url)
+    }
+
+    @Test
+    @DisplayName("valid experiments signature verifies")
+    fun validExperimentsSignature() {
+        val keyPair = generateKeyPair()
+        val bundle = signedExperimentsBundle(
+            strings = mapOf("checkout.cta" to experimentEntry()),
+            privateKey = keyPair.privateKey,
+            publicKey = keyPair.publicKey,
+        )
+        val verifier = BundleVerifier(publicKeys = listOf(keyPair.publicKeyBase64))
+
+        assertTrue(verifier.verifyExperiments(bundle))
+    }
+
+    @Test
+    @DisplayName("tampered allocation fails experiments verification")
+    fun tamperedAllocationFailsExperimentsVerification() {
+        val keyPair = generateKeyPair()
+        val original = signedExperimentsBundle(
+            strings = mapOf("checkout.cta" to experimentEntry()),
+            privateKey = keyPair.privateKey,
+            publicKey = keyPair.publicKey,
+        )
+        val tampered = original.copy(
+            strings = mapOf(
+                "checkout.cta" to experimentEntry(allocation = mapOf("control" to 10, "variant_a" to 90)),
+            ),
+        )
+        val verifier = BundleVerifier(publicKeys = listOf(keyPair.publicKeyBase64))
+
+        assertFalse(verifier.verifyExperiments(tampered))
+    }
+
+    @Test
+    @DisplayName("experiments present but signature null fails verification")
+    fun nullExperimentsSignatureFails() {
+        val keyPair = generateKeyPair()
+        val bundle = StringBundle(
+            formatVersion = 1,
+            projectId = "proj_x",
+            locale = "en-US",
+            revision = 42,
+            createdAt = "2026-07-14T10:00:00Z",
+            keyId = keyPair.publicKeyBase64,
+            signature = "",
+            strings = mapOf("checkout.cta" to experimentEntry()),
+            experimentsSignature = null,
+        )
+        val verifier = BundleVerifier(publicKeys = listOf(keyPair.publicKeyBase64))
+
+        assertFalse(verifier.verifyExperiments(bundle))
     }
 }

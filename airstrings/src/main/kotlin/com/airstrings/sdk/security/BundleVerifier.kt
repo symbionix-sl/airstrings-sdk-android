@@ -60,4 +60,32 @@ internal class BundleVerifier(
             throw AirStringsError.UnsupportedFormatVersion(bundle.formatVersion)
         }
     }
+
+    /**
+     * Verifies the optional `experiments_signature` over the experiments canonical content.
+     * Soft-fail: returns `false` on any problem (unknown/invalid key, missing/short signature,
+     * mismatch) and never throws — the caller falls back to base values.
+     */
+    fun verifyExperiments(bundle: StringBundle): Boolean {
+        if (bundle.keyId !in publicKeys) return false
+
+        val keyData = try {
+            java.util.Base64.getDecoder().decode(bundle.keyId)
+        } catch (_: IllegalArgumentException) {
+            return false
+        }
+        if (keyData.size != 32) return false
+
+        val signature = bundle.experimentsSignature ?: return false
+        val signatureBytes = Base64Url.decode(signature)
+        if (signatureBytes == null || signatureBytes.size != 64) return false
+
+        val canonicalBytes = CanonicalJson.experimentsSignedContent(bundle)
+
+        val publicKey = Ed25519PublicKeyParameters(keyData, 0)
+        val signer = Ed25519Signer()
+        signer.init(false, publicKey)
+        signer.update(canonicalBytes, 0, canonicalBytes.size)
+        return signer.verifySignature(signatureBytes)
+    }
 }
