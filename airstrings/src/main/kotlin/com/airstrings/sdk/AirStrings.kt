@@ -57,7 +57,16 @@ public class AirStrings : Closeable {
     /** Called when strings update mid-session. Receives locale and new revision. Always called on main thread. */
     public var onStringsUpdated: ((locale: String, revision: Int) -> Unit)? = null
 
-    /** Called on read when an experiment variant is first exposed. Delivered asynchronously on the main thread. */
+    /**
+     * Called when an experiment variant is first exposed on read; delivered asynchronously on the main thread.
+     *
+     * Fires at most once per unique `(key, experimentId, variant, assignmentId)` for the lifetime of this
+     * instance — repeated reads, including a user re-entering the same screen, do not fire it again. It resets
+     * only on a new `AirStrings` instance (app relaunch) or a changed assignment id.
+     *
+     * This is exposure (attribute a user to a variant once per session — join to conversions on `assignmentId`),
+     * not impressions; for per-render counts, emit your own event when the screen/composable enters.
+     */
     public var onExposure: ((ExposureEvent) -> Unit)? = null
 
     // MARK: - Private mutable state

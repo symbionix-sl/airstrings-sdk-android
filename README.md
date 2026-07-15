@@ -143,6 +143,8 @@ val cta = airStrings["checkout.cta"]
 airStrings.setAssignmentId(null)
 ```
 
+**Exposure fires once per session.** `onExposure` is deduped per `AirStrings` instance — a user re-entering the same screen won't fire it again; it resets on app relaunch (new instance) or when the assignment id changes. This is deliberate: exposure attributes a user to a variant (join to conversions by `assignmentId`). For per-render impression counts, track your own event when the screen enters.
+
 ## Security
 
 Every bundle is Ed25519-signed and verified before use:
