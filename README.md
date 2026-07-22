@@ -24,7 +24,7 @@ Then add the dependency:
 
 ```kotlin
 dependencies {
-    implementation("com.github.symbionix-sl:airstrings-sdk-android:v0.4.0")
+    implementation("com.github.symbionix-sl:airstrings-sdk-android:v1.1.1")
 }
 ```
 
