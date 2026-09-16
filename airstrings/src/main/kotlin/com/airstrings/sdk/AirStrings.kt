@@ -325,7 +325,7 @@ public class AirStrings : Closeable {
         this._currentLocale = MutableStateFlow(configuration.locale.resolved())
     }
 
-    private constructor(
+    internal constructor(
         httpClient: OkHttpClient,
         verifier: BundleVerifier,
         store: BundleStore,
@@ -464,10 +464,10 @@ public class AirStrings : Closeable {
                 loadLocalBundle()
             }
             if (!::fetcher.isInitialized) {
-                val cdnBaseUrl = withContext(Dispatchers.IO) {
+                val (cdnBaseUrl, fallbackBaseUrl) = withContext(Dispatchers.IO) {
                     bootstrap(configuration.apiBaseURL)
                 }
-                fetcher = BundleFetcher(baseUrl = cdnBaseUrl, client = httpClient)
+                fetcher = BundleFetcher(baseUrl = cdnBaseUrl, fallbackBaseUrl = fallbackBaseUrl, client = httpClient)
             }
             refresh()
             // Register foreground observer only after fetcher is initialized.
@@ -559,7 +559,7 @@ public class AirStrings : Closeable {
         }
     }
 
-    private fun bootstrap(apiBaseURL: String): String {
+    private fun bootstrap(apiBaseURL: String): Pair<String, String?> {
         return try {
             val request = Request.Builder()
                 .url("${apiBaseURL.trimEnd('/')}/v1/sdk/bootstrap")
@@ -570,15 +570,16 @@ public class AirStrings : Closeable {
                 if (resp.isSuccessful) {
                     val body = resp.body?.string() ?: throw IOException("Empty body")
                     val json = JSONObject(body)
-                    json.getString("cdn_base_url")
+                    val fallback = if (json.isNull("fallback_base_url")) null else json.getString("fallback_base_url")
+                    json.getString("cdn_base_url") to fallback?.takeIf { it.isNotBlank() }
                 } else {
                     Log.w(TAG, "Bootstrap returned HTTP ${resp.code}, using default CDN URL")
-                    DEFAULT_CDN_URL
+                    DEFAULT_CDN_URL to null
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Bootstrap failed: ${e.message}, using default CDN URL")
-            DEFAULT_CDN_URL
+            DEFAULT_CDN_URL to null
         }
     }
 
