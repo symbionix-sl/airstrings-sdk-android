@@ -1,6 +1,14 @@
 # AirStrings Android SDK
 
-Ed25519-signed localized string bundles for Android. Fetches, verifies, caches, and serves remote strings with Jetpack Compose integration.
+Change your app's text without a Play Store release.
+
+[AirStrings](https://airstrings.com) publishes your strings as Ed25519-signed bundles on a CDN. This SDK fetches them, verifies the signature on device, caches them, and serves them to Jetpack Compose. A bundle that fails verification is never shown.
+
+```kotlin
+implementation("com.github.symbionix-sl:airstrings-sdk-android:v1.2.0")
+```
+
+Free plan available · [Docs](https://docs.airstrings.com) · [Sign up](https://app.airstrings.com)
 
 **API 26+** · **Kotlin 2.0+** · **Compose-ready**
 
