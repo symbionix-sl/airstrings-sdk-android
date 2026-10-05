@@ -172,7 +172,7 @@ Every bundle is Ed25519-signed and verified before use:
 
 ## Bundled Fallback (offline-safe builds)
 
-Ship published, signed bundles inside your APK so a cold start with no network serves real strings instead of key names. The SDK seeds from `assets/airstrings/bundles/` automatically — no configuration required. Defined by the bundled fallback contract (`docs/contracts/bundled-fallback.md` in the AirStrings platform repo).
+Ship published, signed bundles inside your APK so a cold start with no network serves real strings instead of key names. The SDK seeds from `assets/airstrings/bundles/` automatically — no configuration required. Defined by the [bundled fallback spec](https://docs.airstrings.com/docs/specs/bundled-fallback).
 
 ### 1. Pull and commit the seed directory
 
